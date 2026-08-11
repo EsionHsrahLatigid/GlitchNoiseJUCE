@@ -23,6 +23,12 @@ int main()
     passed &= check(!processor.acceptsMidi(), "processor should not accept MIDI");
     passed &= check(!processor.isMidiEffect(), "processor should be an audio effect");
     passed &= check(processor.getPresetCount() > 0, "preset bank should be available");
+    passed &= check(GlitchEngine::rotateLeftForTest(0x12345678u, 0) == 0x12345678u,
+                    "zero-bit rotate should return input without UB");
+    passed &= check(GlitchEngine::rotateLeftForTest(0x12345678u, 32) == 0x12345678u,
+                    "32-bit rotate should normalize to zero-bit rotate");
+    passed &= check(GlitchEngine::rotateLeftForTest(0x80000001u, 1) == 0x00000003u,
+                    "one-bit rotate should preserve wrapped bit behavior");
 
     juce::AudioProcessor::BusesLayout stereo;
     stereo.inputBuses.add(juce::AudioChannelSet::stereo());

@@ -79,6 +79,11 @@ public:
     int  getUiClockIndex()const { return uiClockIndex.load (std::memory_order_acquire); }
     int  getUiMicroLenMs()const { return uiMicroLenMs.load (std::memory_order_acquire); }
 
+    static inline uint32_t rotateLeftForTest (uint32_t x, int k) noexcept
+    {
+        return rotl32u (x, k);
+    }
+
     // === parameter setter ===
     void setParams (float clock, float wordSize, float opMorph, float mask, float jitter,
                     float stutter, float feedback, float density, bool limiterOn, float outGainLin)
@@ -266,9 +271,11 @@ private:
     }
     static inline float q23ToFloat (int32_t v) { return (float) v / 8388607.0f; }
 
-    static inline uint32_t rotl32u (uint32_t x, int k)
+    static inline uint32_t rotl32u (uint32_t x, int k) noexcept
     {
         k &= 31;
+        if (k == 0)
+            return x;
         return (x << k) | (x >> (32 - k));
     }
 
