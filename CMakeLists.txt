@@ -13,6 +13,7 @@ set(GLITCHNOISEJUCE_ARTIFACT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/artifacts" CACHE P
 
 if(GLITCHNOISEJUCE_BUILD_PLUGIN)
   include(FetchContent)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/JUCE/CMakeLists.txt")
     add_subdirectory(JUCE)
@@ -87,6 +88,9 @@ if(GLITCHNOISEJUCE_BUILD_PLUGIN)
     COMMAND ${CMAKE_COMMAND} -E remove_directory "${glitchnoise_staged_products}/Standalone"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${glitchnoise_juce_products}/VST3" "${glitchnoise_staged_products}/VST3"
+    COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/NormalizeVst3ModuleInfo.py"
+            "${glitchnoise_staged_products}/VST3/GlitchNoiseJUCE.vst3/Contents/Resources/moduleinfo.json"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${glitchnoise_juce_products}/Standalone" "${glitchnoise_staged_products}/Standalone")
 
@@ -129,6 +133,7 @@ if(GLITCHNOISEJUCE_BUILD_PLUGIN)
       COMMAND ${CMAKE_COMMAND}
               -DGLITCHNOISEJUCE_STAGED_DIR=${GLITCHNOISEJUCE_ARTIFACT_DIR}/$<CONFIG>
               -DGLITCHNOISEJUCE_EXPECT_AU=$<BOOL:${APPLE}>
+              -DPython3_EXECUTABLE=${Python3_EXECUTABLE}
               -P ${CMAKE_CURRENT_SOURCE_DIR}/Tests/VerifyArtifacts.cmake)
   endif()
 endif()
