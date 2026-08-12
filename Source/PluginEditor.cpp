@@ -1,314 +1,205 @@
 #include "PluginEditor.h"
 
-GlitchNoiseAudioProcessorEditor::Os9WebUI::Os9WebUI (GlitchNoiseAudioProcessor& p)
-: juce::WebBrowserComponent(), proc (p)
+#include <cmath>
+
+namespace
 {
-    loadUi();
-}
-
-static juce::String buildPresetOptions (GlitchNoiseAudioProcessor& proc)
+struct ControlSpec
 {
-    juce::String opts;
-    const int n = proc.getPresetCount();
-    for (int i = 0; i < n; ++i)
-        opts << "<option value='" << i << "'>" << proc.getPresetName(i) << "</option>";
-    return opts;
-}
+    const char* id;
+    const char* label;
+    const char* tip;
+};
 
-juce::String GlitchNoiseAudioProcessorEditor::Os9WebUI::makeHtml (GlitchNoiseAudioProcessor& proc)
+constexpr ControlSpec controls[] {
+    { "clock", "CLOCK", "Clock division and micro-buffer cadence." },
+    { "wordSize", "WORD", "Bit word size for integer corruption." },
+    { "opMorph", "OP", "Morph between bitwise operations." },
+    { "mask", "MASK", "Bit mask pressure for the corruptor." },
+    { "jitter", "JITTER", "Clock instability and short timing offsets." },
+    { "stutter", "STUTTER", "Micro-repeat probability and length." },
+    { "feedback", "FDBK", "Internal feedback into the glitch network." },
+    { "density", "DENS", "Density of destructive events." },
+    { "outputDb", "OUTPUT", "Final output trim in dB." },
+};
+
+static_assert (std::size (controls) == 9);
+
+float normalizedSliderValue (juce::Slider& slider) noexcept
 {
-    const auto presetOptions = buildPresetOptions (proc);
-
-    juce::String html;
-    html << R"HTML(
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GlitchNoiseJUCE</title>
-<style>
-  :root{
-    --bg:#C0C0C0;
-    --panel:#D0D0D0;
-    --dark:#808080;
-    --light:#FFFFFF;
-    --text:#000000;
-  }
-  body{
-    margin:0; padding:0;
-    background:var(--bg);
-    font-family: Chicago, Charcoal, Geneva, "MS Sans Serif", system-ui, sans-serif;
-    color:var(--text);
-    user-select:none;
-  }
-  .wrap{ padding:10px; }
-  .titlebar{
-    background:var(--panel);
-    border-top:2px solid var(--light);
-    border-left:2px solid var(--light);
-    border-right:2px solid var(--dark);
-    border-bottom:2px solid var(--dark);
-    padding:6px 8px;
-    font-weight:700;
-    display:flex; justify-content:space-between; align-items:center;
-  }
-  .panel{
-    margin-top:10px;
-    background:var(--panel);
-    border-top:2px solid var(--light);
-    border-left:2px solid var(--light);
-    border-right:2px solid var(--dark);
-    border-bottom:2px solid var(--dark);
-    padding:10px;
-  }
-  .grid{
-    display:grid;
-    grid-template-columns: 1fr 1fr;
-    gap:10px;
-  }
-  .row{
-    display:flex;
-    align-items:center;
-    gap:8px;
-  }
-  label{ width:82px; font-size:12px; }
-  input[type="range"]{ width:100%; }
-  .lock{ width:16px; height:16px; }
-  .btn{
-    background:var(--panel);
-    border-top:2px solid var(--light);
-    border-left:2px solid var(--light);
-    border-right:2px solid var(--dark);
-    border-bottom:2px solid var(--dark);
-    padding:4px 10px;
-    font-size:12px;
-    cursor:pointer;
-  }
-  .btn:active{
-    border-top:2px solid var(--dark);
-    border-left:2px solid var(--dark);
-    border-right:2px solid var(--light);
-    border-bottom:2px solid var(--light);
-  }
-  .small{ font-size:11px; opacity:0.9; }
-  .tog{ display:flex; align-items:center; gap:6px; }
-  select{
-    background:var(--panel);
-    border-top:2px solid var(--light);
-    border-left:2px solid var(--light);
-    border-right:2px solid var(--dark);
-    border-bottom:2px solid var(--dark);
-    padding:2px 6px;
-    font-size:12px;
-  }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="titlebar">
-    <div>GlitchNoiseJUCE</div>
-    <div class="small">OS9-ish</div>
-  </div>
-
-  <div class="panel">
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-      <div style="display:flex; align-items:center; gap:8px;">
-        <label style="width:auto;">Preset</label>
-        <select id="preset">
-)HTML";
-
-    html << presetOptions;
-
-    html << R"HTML(
-        </select>
-        <button class="btn" id="loadPreset">Load</button>
-      </div>
-      <div class="tog">
-        <input id="limiterOn" type="checkbox">
-        <label for="limiterOn" style="width:auto;">Limiter</label>
-      </div>
-    </div>
-
-    <div class="grid" style="margin-top:10px;">
-      <div class="row"><label>Clock</label>    <input id="clock"    type="range" min="0" max="1" step="0.0001"><input class="lock" id="lock_clock" type="checkbox" title="Lock"></div>
-      <div class="row"><label>WordSize</label> <input id="wordSize" type="range" min="0" max="1" step="0.0001"><input class="lock" id="lock_wordSize" type="checkbox" title="Lock"></div>
-      <div class="row"><label>OpMorph</label>  <input id="opMorph"  type="range" min="0" max="1" step="0.0001"><input class="lock" id="lock_opMorph" type="checkbox" title="Lock"></div>
-      <div class="row"><label>Mask</label>     <input id="mask"     type="range" min="0" max="1" step="0.0001"><input class="lock" id="lock_mask" type="checkbox" title="Lock"></div>
-      <div class="row"><label>Jitter</label>   <input id="jitter"   type="range" min="0" max="1" step="0.0001"><input class="lock" id="lock_jitter" type="checkbox" title="Lock"></div>
-      <div class="row"><label>Stutter</label>  <input id="stutter"  type="range" min="0" max="1" step="0.0001"><input class="lock" id="lock_stutter" type="checkbox" title="Lock"></div>
-      <div class="row"><label>Feedback</label> <input id="feedback" type="range" min="0" max="1" step="0.0001"><input class="lock" id="lock_feedback" type="checkbox" title="Lock"></div>
-      <div class="row"><label>Density</label>  <input id="density"  type="range" min="0" max="1" step="0.0001"><input class="lock" id="lock_density" type="checkbox" title="Lock"></div>
-    </div>
-
-    <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
-      <div class="small">
-        Randomize respects locks. Limiter is for A/B; keep ON by default.
-      </div>
-      <div style="display:flex; gap:8px;">
-        <button class="btn" id="randomize">Randomize</button>
-        <button class="btn" id="panic">Panic</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-  function sendSet(pid, value){
-    window.location.href = `juce://set?pid=${encodeURIComponent(pid)}&value=${encodeURIComponent(value)}`;
-  }
-  function sendCmd(name){
-    window.location.href = `juce://cmd?name=${encodeURIComponent(name)}`;
-  }
-  function sendLock(pid, value){
-    window.location.href = `juce://lock?pid=${encodeURIComponent(pid)}&value=${encodeURIComponent(value)}`;
-  }
-  function sendPreset(index){
-    window.location.href = `juce://preset?index=${encodeURIComponent(index)}`;
-  }
-
-  const ids = ["clock","wordSize","opMorph","mask","jitter","stutter","feedback","density"];
-  ids.forEach(id=>{
-    const el = document.getElementById(id);
-    el.addEventListener("input", ()=> sendSet(id, el.value));
-
-    const lk = document.getElementById("lock_" + id);
-    lk.addEventListener("change", ()=> sendLock(id, lk.checked ? "1" : "0"));
-  });
-
-  const lim = document.getElementById("limiterOn");
-  lim.addEventListener("change", ()=> sendSet("limiterOn", lim.checked ? "1" : "0"));
-
-  document.getElementById("randomize").addEventListener("click", ()=> sendCmd("randomize"));
-  document.getElementById("panic").addEventListener("click", ()=> sendCmd("panic"));
-
-  const presetSel = document.getElementById("preset");
-  document.getElementById("loadPreset").addEventListener("click", ()=> sendPreset(presetSel.value));
-</script>
-</body>
-</html>
-)HTML";
-    return html;
+    const auto normalized = static_cast<float> (slider.valueToProportionOfLength (slider.getValue()));
+    return std::isfinite (normalized) ? juce::jlimit (0.0f, 1.0f, normalized) : 0.0f;
 }
-
-static juce::String makeDataUrlString (const juce::String& html)
-{
-    return "data:text/html;charset=utf-8," + juce::URL::addEscapeChars (html, true);
-}
-
-juce::URL GlitchNoiseAudioProcessorEditor::Os9WebUI::makeDataUrl (const juce::String& html)
-{
-    auto escaped = juce::URL::addEscapeChars (html, true);
-    return juce::URL ("data:text/html;charset=utf-8," + escaped);
-}
-
-void GlitchNoiseAudioProcessorEditor::Os9WebUI::loadUi()
-{
-    goToURL (makeDataUrlString (makeHtml (proc)));
-}
-
-juce::String GlitchNoiseAudioProcessorEditor::Os9WebUI::getAction (const juce::String& juceUrl)
-{
-    auto s = juceUrl.fromFirstOccurrenceOf ("juce://", false, false);
-    if (s.containsChar ('?'))
-        return s.upToFirstOccurrenceOf ("?", false, false);
-    return s;
-}
-
-juce::String GlitchNoiseAudioProcessorEditor::Os9WebUI::getQuery (const juce::String& juceUrl)
-{
-    return juceUrl.fromFirstOccurrenceOf ("?", false, false);
-}
-
-juce::String GlitchNoiseAudioProcessorEditor::Os9WebUI::getParam (const juce::String& query, const juce::String& key)
-{
-    juce::StringArray parts;
-    parts.addTokens (query, "&", "");
-
-    for (auto& part : parts)
-    {
-        const auto k = part.upToFirstOccurrenceOf ("=", false, false);
-        if (k == key)
-        {
-            auto v = part.fromFirstOccurrenceOf ("=", false, false);
-            return juce::URL::removeEscapeChars (v);
-        }
-    }
-    return {};
-}
-
-bool GlitchNoiseAudioProcessorEditor::Os9WebUI::pageAboutToLoad (const juce::String& newURL)
-{
-    if (newURL.startsWith ("juce://"))
-    {
-        const auto action = getAction (newURL);
-        const auto query  = getQuery (newURL);
-
-        if (action == "set")
-        {
-            const auto pid = getParam (query, "pid");
-            const auto val = getParam (query, "value");
-
-            if (pid.isNotEmpty())
-            {
-                if (pid == "limiterOn")
-                {
-                    if (auto* p = proc.apvts.getParameter ("limiterOn"))
-                    {
-                        p->beginChangeGesture();
-                        p->setValueNotifyingHost (val == "1" ? 1.0f : 0.0f);
-                        p->endChangeGesture();
-                    }
-                }
-                else
-                {
-                    if (auto* p = proc.apvts.getParameter (pid))
-                    {
-                        const float f = (float) val.getDoubleValue(); // sliders are 0..1
-                        p->beginChangeGesture();
-                        p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, f));
-                        p->endChangeGesture();
-                    }
-                }
-            }
-        }
-        else if (action == "cmd")
-        {
-            const auto name = getParam (query, "name");
-            if (name == "panic")      proc.triggerPanic();
-            if (name == "randomize")  proc.randomizeParams();
-        }
-        else if (action == "lock")
-        {
-            const auto pid = getParam (query, "pid");
-            const auto val = getParam (query, "value");
-            proc.setLock (pid, val == "1");
-        }
-        else if (action == "preset")
-        {
-            const auto idx = getParam (query, "index").getIntValue();
-            proc.loadPreset (idx);
-        }
-
-        return false;
-    }
-
-    return true;
-}
+} // namespace
 
 GlitchNoiseAudioProcessorEditor::GlitchNoiseAudioProcessorEditor (GlitchNoiseAudioProcessor& p)
-: AudioProcessorEditor (&p), processor (p), web (p)
+: AudioProcessorEditor (&p), audioProcessor (p),
+  tooltipText ("GlitchNoiseJUCE: integer and bitwise glitch controls with preset load, randomize locks, limiter A/B, panic, and output trim.")
 {
-    setSize (460, 300);
-    addAndMakeVisible (web);
+    setLookAndFeel (&lookAndFeel);
+    setResizeLimits (minimumWidth, minimumHeight,
+                     ehl::juce_design::Metrics::maximumWidth,
+                     ehl::juce_design::Metrics::maximumHeight);
+    setResizable (true, true);
+    setName ("GlitchNoiseJUCE editor");
+    setComponentID ("glitchnoisejuce-editor");
+    setTitle ("GlitchNoiseJUCE");
+    setDescription ("GlitchNoiseJUCE monochrome 8-bit glitch editor");
+    setWantsKeyboardFocus (true);
+
+    parameterDisplay.setComponentID ("glitchnoisejuce-parameter-display");
+    parameterDisplay.setName ("GlitchNoiseJUCE parameter display");
+    addAndMakeVisible (parameterDisplay);
+
+    for (int i = 0; i < static_cast<int> (std::size (controls)); ++i)
+        addSlider (i, controls[i].id, controls[i].label, controls[i].tip);
+
+    for (int i = 0; i < static_cast<int> (lockButtons.size()); ++i)
+        addLock (i, controls[i].id);
+
+    ehl::juce_design::styleToggle (limiterButton);
+    limiterButton.setButtonText ("LIMIT");
+    limiterButton.setComponentID ("glitchnoisejuce-limiterOn");
+    limiterButton.setName ("Limiter");
+    limiterButton.setTooltip ("Limiter A/B; randomize keeps it on by default.");
+    limiterButton.setWantsKeyboardFocus (true);
+    addAndMakeVisible (limiterButton);
+    limiterAttachment = std::make_unique<ButtonAttachment> (audioProcessor.apvts, "limiterOn", limiterButton);
+
+    ehl::juce_design::styleComboBox (presetBox);
+    presetBox.setComponentID ("glitchnoisejuce-preset");
+    presetBox.setName ("Preset");
+    presetBox.setTooltip ("Load a GlitchNoiseJUCE preset.");
+    for (int i = 0; i < audioProcessor.getPresetCount(); ++i)
+        presetBox.addItem (audioProcessor.getPresetName (i), i + 1);
+    presetBox.onChange = [this]
+    {
+        if (presetBox.getSelectedId() > 0)
+            audioProcessor.loadPreset (presetBox.getSelectedId() - 1);
+    };
+    presetBox.setSelectedId (1, juce::dontSendNotification);
+    addAndMakeVisible (presetBox);
+
+    styleCommandButton (randomizeButton, "RAND", "glitchnoisejuce-randomize");
+    randomizeButton.setTooltip ("Randomize unlocked macro parameters.");
+    randomizeButton.onClick = [this] { audioProcessor.randomizeParams(); };
+    addAndMakeVisible (randomizeButton);
+
+    styleCommandButton (panicButton, "PANIC", "glitchnoisejuce-panic");
+    panicButton.setTooltip ("Clear the next block and reset transient glitch state.");
+    panicButton.onClick = [this] { audioProcessor.triggerPanic(); };
+    addAndMakeVisible (panicButton);
+
+    updateParameterDisplay();
+    startTimerHz (30);
+    setSize (defaultWidth, defaultHeight);
+}
+
+GlitchNoiseAudioProcessorEditor::~GlitchNoiseAudioProcessorEditor()
+{
+    stopTimer();
+    for (auto& slider : sliders)
+        slider.setLookAndFeel (nullptr);
+    for (auto& label : labels)
+        label.setLookAndFeel (nullptr);
+    for (auto& lock : lockButtons)
+        lock.setLookAndFeel (nullptr);
+    limiterButton.setLookAndFeel (nullptr);
+    presetBox.setLookAndFeel (nullptr);
+    randomizeButton.setLookAndFeel (nullptr);
+    panicButton.setLookAndFeel (nullptr);
+    tooltipWindow.setLookAndFeel (nullptr);
+    setLookAndFeel (nullptr);
+}
+
+void GlitchNoiseAudioProcessorEditor::addSlider (int index, const juce::String& parameterId, const juce::String& labelText, const juce::String& tip)
+{
+    auto& slider = sliders[static_cast<std::size_t> (index)];
+    ehl::juce_design::styleSlider (slider);
+    slider.setComponentID ("glitchnoisejuce-control-" + parameterId);
+    slider.setName ("GlitchNoiseJUCE " + labelText);
+    slider.setTitle (labelText);
+    slider.setDescription (tip);
+    slider.setTooltip (tip);
+    slider.setWantsKeyboardFocus (true);
+    addAndMakeVisible (slider);
+
+    auto& label = labels[static_cast<std::size_t> (index)];
+    label.setText (labelText, juce::dontSendNotification);
+    ehl::juce_design::styleLabel (label);
+    label.setComponentID ("glitchnoisejuce-label-" + parameterId);
+    label.setName (labelText);
+    label.setTooltip (tip);
+    addAndMakeVisible (label);
+
+    sliderAttachments[static_cast<std::size_t> (index)] = std::make_unique<SliderAttachment> (audioProcessor.apvts, parameterId, slider);
+}
+
+void GlitchNoiseAudioProcessorEditor::addLock (int index, const juce::String& parameterId)
+{
+    auto& lock = lockButtons[static_cast<std::size_t> (index)];
+    ehl::juce_design::styleToggle (lock);
+    lock.setButtonText ("L");
+    lock.setComponentID ("glitchnoisejuce-lock-" + parameterId);
+    lock.setName ("Lock " + parameterId);
+    lock.setTooltip ("Lock " + parameterId + " during randomize.");
+    lock.setWantsKeyboardFocus (true);
+    lock.onClick = [this, parameterId, &lock] { audioProcessor.setLock (parameterId, lock.getToggleState()); };
+    addAndMakeVisible (lock);
+}
+
+void GlitchNoiseAudioProcessorEditor::styleCommandButton (juce::TextButton& button, const juce::String& text, const juce::String& componentId)
+{
+    button.setButtonText (text);
+    button.setComponentID (componentId);
+    button.setName (text);
+    button.setWantsKeyboardFocus (true);
+    button.setColour (juce::TextButton::buttonColourId, ehl::juce_design::Palette::ink());
+    button.setColour (juce::TextButton::buttonOnColourId, ehl::juce_design::Palette::paper());
+    button.setColour (juce::TextButton::textColourOffId, ehl::juce_design::Palette::paper());
+    button.setColour (juce::TextButton::textColourOnId, ehl::juce_design::Palette::ink());
 }
 
 void GlitchNoiseAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colours::black);
+    ehl::juce_design::paintEditorChrome (g, getLocalBounds(), "GlitchNoiseJUCE", "BITWISE GLITCH");
 }
 
 void GlitchNoiseAudioProcessorEditor::resized()
 {
-    web.setBounds (getLocalBounds());
+    parameterDisplay.setBounds (ehl::juce_design::parameterDisplayArea (getLocalBounds()));
+
+    for (int i = 0; i < static_cast<int> (sliders.size()); ++i)
+        ehl::juce_design::layoutLabelledControl (labels[static_cast<std::size_t> (i)],
+                                                 sliders[static_cast<std::size_t> (i)],
+                                                 ehl::juce_design::controlCell (getLocalBounds(), static_cast<std::size_t> (i)));
+
+    for (int i = 0; i < static_cast<int> (lockButtons.size()); ++i)
+    {
+        auto control = sliders[static_cast<std::size_t> (i)].getBounds();
+        lockButtons[static_cast<std::size_t> (i)].setBounds (control.removeFromRight (28).removeFromTop (24));
+    }
+
+    auto presetCell = ehl::juce_design::controlCell (getLocalBounds(), 9);
+    auto randomizeCell = ehl::juce_design::controlCell (getLocalBounds(), 10);
+    auto finalCell = ehl::juce_design::controlCell (getLocalBounds(), 11);
+    presetBox.setBounds (presetCell.reduced (0, ehl::juce_design::Metrics::labelHeight));
+    randomizeButton.setBounds (randomizeCell.reduced (0, ehl::juce_design::Metrics::labelHeight));
+
+    finalCell.reduce (0, ehl::juce_design::Metrics::labelHeight);
+    limiterButton.setBounds (finalCell.removeFromTop (juce::jmin (40, finalCell.getHeight() / 2)).reduced (0, 2));
+    panicButton.setBounds (finalCell.reduced (0, 2));
+}
+
+void GlitchNoiseAudioProcessorEditor::timerCallback()
+{
+    updateParameterDisplay();
+}
+
+void GlitchNoiseAudioProcessorEditor::updateParameterDisplay()
+{
+    parameterDisplay.setValues ({ normalizedSliderValue (sliders[0]),
+                                  normalizedSliderValue (sliders[1]),
+                                  normalizedSliderValue (sliders[2]),
+                                  normalizedSliderValue (sliders[3]) });
 }
